@@ -230,11 +230,17 @@ async def search_news(query: str) -> str:
 async def enrich_with_news(markets: list) -> list:
     if not SERPER_API_KEY:
         return markets
-    print(f"  Fetching news for {len(markets)} markets...")
-    for m in markets:
+    # Only search news for top 5 markets by volume to avoid timeouts
+    top = markets[:5]
+    print(f"  Fetching news for top {len(top)} markets...")
+    for m in top:
         q = " ".join(m.get("question", "").split()[:7])
-        m["_news"] = await search_news(q)
-        await asyncio.sleep(0.3)
+        try:
+            m["_news"] = await asyncio.wait_for(search_news(q), timeout=8.0)
+        except asyncio.TimeoutError:
+            print(f"  News timeout for: {q[:40]}")
+            m["_news"] = ""
+        await asyncio.sleep(0.2)
     return markets
 
 
