@@ -156,22 +156,10 @@ def parse_prices(market: dict) -> tuple:
     no  = price_map.get("NO",  round(1 - yes, 4) if yes else 0.0)
     return yes, no
 
-def build_polymarket_url(market: dict) -> str:
-    """Build a working Polymarket URL from market data."""
-    # Polymarket uses groupSlug for event URLs when available
-    group_slug = market.get("groupItemTitle", "")
-    slug       = market.get("slug", "")
-    market_id  = str(market.get("id", ""))
-
-    # Try group slug first (most reliable), then slug, then id
-    identifier = group_slug or slug or market_id
-    if identifier:
-        return f"https://polymarket.com/event/{identifier}"
-    return ""
-
 async def fetch_markets() -> list:
-    """Fetch top active markets from Polymarket Gamma API."""
-    url = "https://gamma-api.polymarket.com/markets"
+    """Fetch top active events+markets from Polymarket Gamma API."""
+    # Use /events endpoint — it returns the event slug used in Polymarket URLs
+    url = "https://gamma-api.polymarket.com/events"
     params = {
         "active": "true", "closed": "false",
         "limit": MAX_MARKETS_PER_SCAN, "offset": 0,
@@ -182,26 +170,41 @@ async def fetch_markets() -> list:
         resp.raise_for_status()
         raw = resp.json()
 
-    markets = raw if isinstance(raw, list) else raw.get("data", raw.get("markets", []))
-    filtered = [m for m in markets if float(m.get("volume", 0) or 0) >= MIN_VOLUME]
+    events = raw if isinstance(raw, list) else raw.get("data", [])
+
+    # Flatten: each event contains one or more markets
+    all_markets = []
+    for event in events:
+        event_slug   = event.get("slug", "")
+        event_volume = float(event.get("volume", 0) or 0)
+        event_url    = f"https://polymarket.com/event/{event_slug}" if event_slug else ""
+
+        for m in event.get("markets", []):
+            m["_event_slug"] = event_slug
+            m["_event_url"]  = event_url
+            m["_event_vol"]  = event_volume
+            all_markets.append(m)
+
+    filtered = [m for m in all_markets if float(m.get("volume", 0) or 0) >= MIN_VOLUME]
     filtered.sort(key=lambda m: float(m.get("volume", 0) or 0), reverse=True)
 
-    # Register each market in our master lookup with REAL data
+    # Register each market with REAL data including the correct event URL
     for m in filtered:
         mid = str(m.get("id", ""))
         yes_price, no_price = parse_prices(m)
         market_registry[mid] = {
             "id":        mid,
             "question":  m.get("question", ""),
-            "slug":      m.get("slug", ""),
-            "url":       build_polymarket_url(m),
+            "slug":      m.get("_event_slug", m.get("slug", "")),
+            "url":       m.get("_event_url", ""),
             "yes_price": yes_price,
             "no_price":  no_price,
             "volume":    float(m.get("volume", 0) or 0),
             "end_date":  m.get("endDate", ""),
         }
 
-    print(f"  Sample market: {list(market_registry.values())[0] if market_registry else 'none'}")
+    sample = list(market_registry.values())[0] if market_registry else {}
+    print(f"  Sample: {sample.get('question','')[:50]} | URL: {sample.get('url','')}")
     return filtered
 
 
