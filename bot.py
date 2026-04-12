@@ -348,6 +348,9 @@ def format_markets_for_ai(markets: list) -> str:
         end_date  = m.get("endDate", "N/A")
         volume    = float(m.get("volume", 0) or 0)
         market_id = m.get("id", "?")
+        slug      = m.get("slug", "")
+        # store slug alongside id for URL building
+        m["_slug"] = slug
 
         outcomes = m.get("outcomes", "[]")
         prices   = m.get("outcomePrices", "[]")
@@ -367,7 +370,7 @@ def format_markets_for_ai(markets: list) -> str:
         no_price  = price_map.get("NO", 1 - yes_price if yes_price else 0)
 
         lines.append(
-            f"ID: {market_id} | Q: {question} | "
+            f"ID: {market_id} SLUG: {slug} | Q: {question} | "
             f"YES: {yes_price:.2f} | NO: {no_price:.2f} | "
             f"Vol: ${volume:,.0f} | Ends: {end_date}"
         )
@@ -393,6 +396,7 @@ Respond ONLY with valid JSON, no markdown fences:
   "opportunities": [
     {
       "market_id": "...",
+      "slug": "...",
       "question": "...",
       "direction": "YES or NO",
       "market_price": 0.00,
@@ -463,7 +467,14 @@ def format_opportunity(opp: dict) -> str:
     conf_emoji = {"HIGH": "🔥", "MEDIUM": "⚡", "LOW": "🌀"}.get(confidence, "❓")
     dir_emoji  = "✅" if direction == "YES" else "❌"
     profit_pct = round(((true_prob - market_price) / market_price) * 100, 1) if market_price > 0 else 0
-    link       = f"https://polymarket.com/event/{market_id}" if market_id else ""
+    # Try to get slug from market_id field (AI sometimes returns slug directly)
+    slug = opp.get("slug", "")
+    if slug:
+        link = f"https://polymarket.com/event/{slug}"
+    elif market_id:
+        link = f"https://polymarket.com/event/{market_id}"
+    else:
+        link = ""
 
     msg = (
         f"{conf_emoji} <b>{confidence} CONFIDENCE</b>\n"
