@@ -187,6 +187,7 @@ async def fetch_markets() -> list:
 
     filtered = [m for m in all_markets if float(m.get("volume", 0) or 0) >= MIN_VOLUME]
     filtered.sort(key=lambda m: float(m.get("volume", 0) or 0), reverse=True)
+    filtered = filtered[:MAX_MARKETS_PER_SCAN]  # hard cap
 
     # Register each market with REAL data including the correct event URL
     for m in filtered:
@@ -369,7 +370,7 @@ async def analyze_all_markets(markets: list) -> list:
         opps = await analyze_batch(format_batch_for_ai(batch), i)
         all_opps.extend(opps)
         if i < len(batches):
-            await asyncio.sleep(4)
+            await asyncio.sleep(10)
 
     # Deduplicate and sort by edge
     seen, unique = set(), []
